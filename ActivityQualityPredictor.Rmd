@@ -1,0 +1,77 @@
+---
+title: "Activity Quality Prediction"
+author: "Dominic Mimnagh"
+date: "February 2, 2015"
+output: html_document
+---
+### Executive Summary
+In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. We will use the data to create a model that can predict correct and incorrect motions. This way we will be able to determine how well they performed the exercises.
+
+### Built the model
+We will need to load the data. 
+```{r}
+set.seed(13131)
+testing<-read.csv("pml-testing.csv",na.strings=c(""," ","NA"))
+training<-read.csv("pml-training.csv",na.strings=c(""," ","NA"))
+```
+Some fields are mis-catagorized during loading we will need to fix this.
+```{r}
+training[8:159]<-sapply(training[8:159],as.numeric)
+testing[8:159]<-sapply(testing[8:159],as.numeric)
+```
+Lets do a little data exploration to see if there are any variable that we should ignore.
+```{r}
+mostlyNotNA<-unlist(lapply(lapply(lapply(training,is.na),sum),function(x) x<dim(training)[1]/2))
+mostlyNotNA
+```
+From looking at the above we see that quite a few of the columns in the training set are mostly NA, so they are unlikely to help the model predicition. Also the X column is just the index so it will have no predictive value since the test set are choosen at random, similiarly we can ignore the timestamp and window fields. The username would only help overfit the training data. This leaves us with the following features.
+```{r}
+myTrain<-training[,mostlyNotNA]
+myTrain<-myTrain[,-(1:7)]
+colnames(myTrain)
+```
+
+Let's create a partitoned data set for us to look at.
+```{r}
+library(caret)
+inTrain = createDataPartition(myTrain$classe, p = 3/4,list=FALSE)
+myTrain<-myTrain[inTrain,]
+dim(myTrain)
+myTest<-myTrain[-inTrain,]
+dim(myTest)
+```
+
+To test out the model we'll try a smaller set at first to try and find the best covariates.
+```{r}
+inSmallTrain <- createDataPartition(myTrain$classe, p = .01,list=FALSE)
+mySmallTrain<-myTrain[inSmallTrain,]
+smallModelFit<- train(classe ~ .,data=mySmallTrain,method="rf")
+imp<-varImp(smallModelFit,scale=FALSE) 
+imp
+```
+This gives us a clear picture of the best covariates to try
+```{r}
+df<-imp$importance
+df$names<-rownames(df)
+bestNames<-head(df[order(-df$Overall),],20)$names
+myBestTrain<-myTrain[,c(bestNames,"classe")]
+```
+
+
+We'll use the randomFroest routine directly to create our model on the new training data set.
+```{r}
+myFit <- randomForest(classe ~ ., data=myBestTrain)
+myFit
+```
+Random forest can calculate an estimate of the "Out-Of-Bag" error rate by using the samples leftover during evaluation of each tree. According to the above an estimated OOB error rate of 1.02% is expected. We are warned that random forest is suseptable to overfitting and crossvalidation is recommended. To do this we return to using the train function in caret and have it setup a 5-fold cross validation using a custom trainControl function.
+
+```{r}
+tc<- trainControl(method="cv",number=5)
+bestModelFit<- train(classe ~ .,data=myBestTrain,method="rf",trControl=tc)
+bestModelFit
+```
+The average accuracy of the selected model params is 0.987. So this pretty good but now we need to see how the model looks against our validation set to determine the Out Of Sample error.
+
+```{r}
+confusionMatrix(myTest$classe,predict(bestModelFit,myTest))
+```
