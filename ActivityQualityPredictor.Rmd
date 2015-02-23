@@ -10,7 +10,7 @@ In this project, our goal is to use data from accelerometers on the belt, forear
 ### Built the model
 We will need to load the data. 
 ```{r}
-set.seed(13131)
+set.seed(13131*17)
 testing<-read.csv("pml-testing.csv",na.strings=c(""," ","NA"))
 training<-read.csv("pml-training.csv",na.strings=c(""," ","NA"))
 ```
@@ -58,20 +58,28 @@ myBestTrain<-myTrain[,c(bestNames,"classe")]
 ```
 
 
-We'll use the randomFroest routine directly to create our model on the new training data set.
+We'll use the randomForest routine directly to create our model on the new training data set.
 ```{r}
 myFit <- randomForest(classe ~ ., data=myBestTrain)
 myFit
 ```
-Random forest can calculate an estimate of the "Out-Of-Bag" error rate by using the samples leftover during evaluation of each tree. According to the above an estimated OOB error rate of 1.02% is expected. We are warned that random forest is suseptable to overfitting and crossvalidation is recommended. To do this we return to using the train function in caret and have it setup a 5-fold cross validation using a custom trainControl function.
+Random forest can calculate an estimate of the "Out-Of-Bag" error rate by using the samples leftover during evaluation of each tree. According to the above an estimated OOB error rate of 0.62% is expected. We are warned that random forest is susceptable to overfitting therfore crossvalidation is recommended. To do this we return to using the train function in caret and have it setup a 5-fold crossvalidation using a custom trainControl function.
 
 ```{r}
 tc<- trainControl(method="cv",number=5)
 bestModelFit<- train(classe ~ .,data=myBestTrain,method="rf",trControl=tc)
 bestModelFit
 ```
-The average accuracy of the selected model params is 0.987. So this pretty good but now we need to see how the model looks against our validation set to determine the Out Of Sample error.
+The average accuracy of the selected model params is 0.990. So this is pretty good but since we used the accuracy to pick the model with mtry=11, this estimate is in a sense contaminated and can't be considered a true Out Of Sample error. Now we need to see how the model looks against our validation set to determine the Out Of Sample error.
 
 ```{r}
-confusionMatrix(myTest$classe,predict(bestModelFit,myTest))
+myBestTest<-myTest[,c(bestNames,"classe")]
+confusionMatrix(myBestTest$classe,predict(bestModelFit,myBestTest))
 ```
+Hmmm, that looks a little too good, 100% accurate. Breaking it down we see 
+```{r}
+pred<-predict(bestModelFit,myBestTest)
+myBestTest$predRight <- pred==myBestTest$classe
+table(pred,myBestTest$predRight)
+```
+Looks like they were well distributed and it looks like we got them all right.
